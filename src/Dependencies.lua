@@ -1,86 +1,82 @@
---
--- libraries
---
+--[[
+    GD50
+    Angry Birds
+    
+    Author: Colton Ogden
+    cogden@cs50.harvard.edu
+]]
 
 Class = require 'lib/class'
-Event = require 'lib/knife.event'
 push = require 'lib/push'
 Timer = require 'lib/knife.timer'
 
-require 'src/Animation'
+require 'src/Alien'
+require 'src/AlienLaunchMarker'
+require 'src/Background'
 require 'src/constants'
-require 'src/Entity'
-require 'src/entity_defs'
-require 'src/GameObject'
-require 'src/game_objects'
-require 'src/Hitbox'
-require 'src/Player'
+require 'src/Level'
+require 'src/Obstacle'
 require 'src/StateMachine'
 require 'src/Util'
 
-require 'src/world/Doorway'
-require 'src/world/Dungeon'
-require 'src/world/Room'
-
 require 'src/states/BaseState'
-
-require 'src/states/entity/EntityIdleState'
-require 'src/states/entity/EntityWalkState'
-
-require 'src/states/entity/player/PlayerIdleState'
-require 'src/states/entity/player/PlayerSwingSwordState'
-require 'src/states/entity/player/PlayerPickupPotState'
-require 'src/states/entity/player/PlayerCarryPotState'
-require 'src/states/entity/player/PlayerCarryIdleState'
-require 'src/states/entity/player/PlayerThrowPotState'
-require 'src/states/entity/player/PlayerWalkState'
-
-require 'src/states/game/GameOverState'
-require 'src/states/game/PlayState'
-require 'src/states/game/StartState'
+require 'src/states/PlayState'
+require 'src/states/StartState'
 
 gTextures = {
-    ['tiles'] = love.graphics.newImage('graphics/tilesheet.png'),
-    ['background'] = love.graphics.newImage('graphics/background.png'),
-    ['character-walk'] = love.graphics.newImage('graphics/character_walk.png'),
-    ['character-swing-sword'] = love.graphics.newImage('graphics/character_swing_sword.png'),
-    ['character-pickup-pot'] = love.graphics.newImage('graphics/character_pot_lift.png'),
-    ['character-carry-pot'] = love.graphics.newImage('graphics/character_pot_walk.png'),
-    ['hearts'] = love.graphics.newImage('graphics/hearts.png'),
-    ['switches'] = love.graphics.newImage('graphics/switches.png'),
-    ['entities'] = love.graphics.newImage('graphics/entities.png'),
-    ['pots'] = love.graphics.newImage('graphics/pot.png')
+    -- backgrounds
+    ['blue-desert'] = love.graphics.newImage('graphics/blue_desert.png'),
+    ['blue-grass'] = love.graphics.newImage('graphics/blue_grass.png'),
+    ['blue-land'] = love.graphics.newImage('graphics/blue_land.png'),
+    ['blue-shroom'] = love.graphics.newImage('graphics/blue_shroom.png'),
+    ['colored-land'] = love.graphics.newImage('graphics/colored_land.png'),
+    ['colored-desert'] = love.graphics.newImage('graphics/colored_desert.png'),
+    ['colored-grass'] = love.graphics.newImage('graphics/colored_grass.png'),
+    ['colored-shroom'] = love.graphics.newImage('graphics/colored_shroom.png'),
+
+    -- aliens
+    ['aliens'] = love.graphics.newImage('graphics/aliens.png'),
+
+    -- tiles
+    ['tiles'] = love.graphics.newImage('graphics/tiles.png'),
+
+    -- wooden obstacles
+    ['wood'] = love.graphics.newImage('graphics/wood.png'),
+
+    -- arrow for trajectory
+    ['arrow'] = love.graphics.newImage('graphics/arrow.png')
 }
 
 gFrames = {
-    ['tiles'] = GenerateQuads(gTextures['tiles'], 16, 16),
-    ['character-walk'] = GenerateQuads(gTextures['character-walk'], 16, 32),
-    ['character-swing-sword'] = GenerateQuads(gTextures['character-swing-sword'], 32, 32),
-    ['character-pickup-pot'] = GenerateQuads(gTextures['character-pickup-pot'], 16, 32),
-    ['character-carry-pot'] = GenerateQuads(gTextures['character-carry-pot'], 16, 32),
-    ['entities'] = GenerateQuads(gTextures['entities'], 16, 16),
-    ['hearts'] = GenerateQuads(gTextures['hearts'], 16, 16),
-    ['switches'] = GenerateQuads(gTextures['switches'], 16, 18),
-    ['pots'] = GenerateQuads(gTextures['pots'], 16, 16)
+    ['aliens'] = GenerateQuads(gTextures['aliens'], 35, 35),
+    ['tiles'] = GenerateQuads(gTextures['tiles'], 35, 35),
+
+    ['wood'] = {
+        love.graphics.newQuad(0, 0, 110, 35, gTextures['wood']:getDimensions()),
+        love.graphics.newQuad(0, 35, 110, 35, gTextures['wood']:getDimensions()),
+        love.graphics.newQuad(320, 180, 35, 110, gTextures['wood']:getDimensions()),
+        love.graphics.newQuad(355, 355, 35, 110, gTextures['wood']:getDimensions())
+    }
+}
+
+gSounds = {
+    ['break1'] = love.audio.newSource('sounds/break1.wav', 'static'),
+    ['break2'] = love.audio.newSource('sounds/break2.wav', 'static'),
+    ['break3'] = love.audio.newSource('sounds/break3.mp3', 'static'),
+    ['break4'] = love.audio.newSource('sounds/break4.wav', 'static'),
+    ['break5'] = love.audio.newSource('sounds/break5.wav', 'static'),
+    ['bounce'] = love.audio.newSource('sounds/bounce.wav', 'static'),
+    ['kill'] = love.audio.newSource('sounds/kill.wav', 'static'),
+
+    ['music'] = love.audio.newSource('sounds/music.wav', 'static')
 }
 
 gFonts = {
     ['small'] = love.graphics.newFont('fonts/font.ttf', 8),
     ['medium'] = love.graphics.newFont('fonts/font.ttf', 16),
     ['large'] = love.graphics.newFont('fonts/font.ttf', 32),
-    ['gothic-medium'] = love.graphics.newFont('fonts/GothicPixels.ttf', 16),
-    ['gothic-large'] = love.graphics.newFont('fonts/GothicPixels.ttf', 32),
-    ['zelda'] = love.graphics.newFont('fonts/zelda.otf', 64),
-    ['zelda-small'] = love.graphics.newFont('fonts/zelda.otf', 32)
+    ['huge'] = love.graphics.newFont('fonts/font.ttf', 64)
 }
 
-gSounds = {
-    ['music'] = love.audio.newSource('sounds/music.mp3', 'static'),
-    ['sword'] = love.audio.newSource('sounds/sword.wav', 'static'),
-    ['hit-enemy'] = love.audio.newSource('sounds/hit_enemy.wav', 'static'),
-    ['hit-player'] = love.audio.newSource('sounds/hit_player.wav', 'static'),
-    ['door'] = love.audio.newSource('sounds/door.wav', 'static'),
-    ['heart'] = love.audio.newSource('sounds/heart.wav', 'static'),
-    ['pot'] = love.audio.newSource('sounds/pot.wav', 'static'),
-    ['pot-break'] = love.audio.newSource('sounds/pot_break.wav', 'static')
-}
+-- tweak circular alien quad
+gFrames['aliens'][9]:setViewport(105.5, 35.5, 35, 34.2)

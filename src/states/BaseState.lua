@@ -1,6 +1,6 @@
 --[[
     GD50
-    Breakout Remake
+    Match-3 Remake
 
     -- BaseState Class --
 

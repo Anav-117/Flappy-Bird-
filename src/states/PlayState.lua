@@ -1,342 +1,291 @@
 --[[
     GD50
-    Breakout Remake
+    Match-3 Remake
 
     -- PlayState Class --
 
     Author: Colton Ogden
     cogden@cs50.harvard.edu
 
-    Represents the state of the game in which we are actively playing;
-    player should control the paddle, with the ball actively bouncing between
-    the bricks, walls, and the paddle. If the ball goes below the paddle, then
-    the player should lose one point of health and be taken either to the Game
-    Over screen if at 0 health or the Serve screen otherwise.
+    State in which we can actually play, moving around a grid cursor that
+    can swap two tiles; when two tiles make a legal swap (a swap that results
+    in a valid match), perform the swap and destroy all matched tiles, adding
+    their values to the player's point score. The player can continue playing
+    until they exceed the number of points needed to get to the next level
+    or until the time runs out, at which point they are brought back to the
+    main menu or the score entry menu if they made the top 10.
 ]]
 
 PlayState = Class{__includes = BaseState}
 
---[[
-    We initialize what's in our PlayState via a state table that we pass between
-    states as we go from playing to serving.
-]]
+function PlayState:init()
+    
+    -- start our transition alpha at full, so we fade in
+    self.transitionAlpha = 1
+
+    -- position in the grid which we're highlighting
+    self.boardHighlightX = 0
+    self.boardHighlightY = 0
+
+    -- timer used to switch the highlight rect's color
+    self.rectHighlighted = false
+
+    -- flag to show whether we're able to process input (not swapping or clearing)
+    self.canInput = true
+
+    -- tile we're currently highlighting (preparing to swap)
+    self.highlightedTile = nil
+
+    self.score = 0
+    self.timer = 60
+
+    -- set our Timer class to turn cursor highlight on and off
+    Timer.every(0.5, function()
+        self.rectHighlighted = not self.rectHighlighted
+    end)
+
+    -- subtract 1 from timer every second
+    Timer.every(1, function()
+        self.timer = self.timer - 1
+
+        -- play warning sound on timer if we get low
+        if self.timer <= 5 then
+            gSounds['clock']:play()
+        end
+    end)
+end
+
 function PlayState:enter(params)
-    self.paddle = params.paddle
-    self.bricks = params.bricks
-    self.health = params.health
-    self.score = params.score
-    self.highScores = params.highScores
-    self.ball = params.ball
+    
+    -- grab level # from the params we're passed
     self.level = params.level
 
-    self.recoverPoints = 5000
+    -- spawn a board and place it toward the right
+    self.board = params.board or Board(VIRTUAL_WIDTH - 272, 16, self.level)
 
-    -- give ball random starting velocity
-    for k, ball in pairs(self.ball) do 
-        ball.dx = math.random(-200, 200)
-        ball.dy = math.random(-50, -60)
-    end
+    -- grab score from params if it was passed
+    self.score = params.score or 0
 
-    self.powerup = {}
-
-    self.collisionCounter = {0, math.random(5, 10)}
-
-    self.flagKey = false
+    -- score we have to reach to get to the next level
+    self.scoreGoal = self.level * 1.25 * 1000
 end
 
 function PlayState:update(dt)
-    if self.paused then
-        if love.keyboard.wasPressed('space') then
-            self.paused = false
-            gSounds['pause']:play()
-        else
-            return
-        end
-    elseif love.keyboard.wasPressed('space') then
-        self.paused = true
-        gSounds['pause']:play()
-        return
-    end
 
-    -- update positions based on velocity
-    self.paddle:update(dt)
-    for k, ball in pairs(self.ball) do 
-        ball:update(dt)
-        if ball:collides(self.paddle) then
-            -- raise ball above paddle in case it goes below it, then reverse dy
-            ball.y = self.paddle.y - ball.height
-            ball.dy = -ball.dy
-
-            --
-            -- tweak angle of bounce based on where it hits the paddle
-            --
-
-            -- if we hit the paddle on its left side while moving left...
-            if ball.x < self.paddle.x + (self.paddle.width / 2) and self.paddle.dx < 0 then
-                ball.dx = -50 + -(8 * (self.paddle.x + self.paddle.width / 2 - ball.x))
-            
-            -- else if we hit the paddle on its right side while moving right...
-            elseif ball.x > self.paddle.x + (self.paddle.width / 2) and self.paddle.dx > 0 then
-                ball.dx = 50 + (8 * math.abs(self.paddle.x + self.paddle.width / 2 - ball.x))
-            end
-
-            gSounds['paddle-hit']:play()
-        end
-    end
-
-    -- detect collision across all bricks with the ball
-    for k, brick in pairs(self.bricks) do
-
-        for j, ball in pairs(self.ball) do
-        -- only check collision if we're in play
-        if brick.inPlay and ball:collides(brick) then
-
-            -- add to score
-            self.score = self.score + (brick.tier * 200 + brick.color * 25)
-
-            -- trigger the brick's hit function, which removes it from play
-            if self.flagKey then
-                brick:hit(self.flagKey)
-            else 
-                brick:hit()
-            end
-
-            self.collisionCounter[1] = self.collisionCounter[1] + 1
-
-            if self.collisionCounter[1] >= self.collisionCounter[2] then
-                table.insert(self.powerup, Powerup({
-                    type = self.flagKey and math.random(9) or math.min(10, math.random(50)),
-                    x = brick.x + brick.width / 2,
-                    y = brick.y + brick.height
-                }))
-                self.collisionCounter = {0, math.random(5, 10)}
-            end
-
-            -- if we have enough points, recover a point of health
-            if self.score > self.recoverPoints then
-                -- can't go above 3 health
-                self.health = math.min(3, self.health + 1)
-
-                self.paddle:change_size('grow')
-
-                -- multiply recover points by 2
-                self.recoverPoints = math.min(100000, self.recoverPoints * 2)
-
-                -- play recover sound effect
-                gSounds['recover']:play()
-            end
-
-            -- go to our victory screen if there are no more bricks left
-            if self:checkVictory() then
-                gSounds['victory']:play()
-
-                gStateMachine:change('victory', {
-                    level = self.level,
-                    paddle = self.paddle,
-                    health = self.health,
-                    score = self.score,
-                    highScores = self.highScores,
-                    ball = self.ball,
-                    recoverPoints = self.recoverPoints
-                })
-            end
-
-            --
-            -- collision code for bricks
-            --
-            -- we check to see if the opposite side of our velocity is outside of the brick;
-            -- if it is, we trigger a collision on that side. else we're within the X + width of
-            -- the brick and should check to see if the top or bottom edge is outside of the brick,
-            -- colliding on the top or bottom accordingly 
-            --
-
-            -- left edge; only check if we're moving right, and offset the check by a couple of pixels
-            -- so that flush corner hits register as Y flips, not X flips
-            if ball.x + 2 < brick.x and ball.dx > 0 then
-                
-                -- flip x velocity and reset position outside of brick
-                ball.dx = -ball.dx
-                ball.x = brick.x - 8
-            
-            -- right edge; only check if we're moving left, , and offset the check by a couple of pixels
-            -- so that flush corner hits register as Y flips, not X flips
-            elseif ball.x + 6 > brick.x + brick.width and ball.dx < 0 then
-                
-                -- flip x velocity and reset position outside of brick
-                ball.dx = -ball.dx
-                ball.x = brick.x + 32
-            
-            -- top edge if no X collisions, always check
-            elseif ball.y < brick.y then
-                
-                -- flip y velocity and reset position outside of brick
-                ball.dy = -ball.dy
-                ball.y = brick.y - 8
-            
-            -- bottom edge if no X collisions or top collision, last possibility
-            else
-                
-                -- flip y velocity and reset position outside of brick
-                ball.dy = -ball.dy
-                ball.y = brick.y + 16
-            end
-
-            -- slightly scale the y velocity to speed up the game, capping at +- 150
-            if math.abs(ball.dy) < 150 then
-                ball.dy = ball.dy * 1.02
-            end
-
-            -- only allow colliding with one brick, for corners
-            break
-        end
-    end
-    end
-
-    for k, powerup in pairs(self.powerup) do
-        powerup:update(dt)
-    end
-
-    for k, powerup in pairs(self.powerup) do
-        if powerup:collides(self.paddle) then
-            if powerup.type == 10 then
-                gSounds['key']:play()
-            else
-                gSounds['powerup']:play()
-            end
-            
-            if powerup.type == 1 then
-                self.paddle:change_size('shrink')
-            elseif powerup.type == 2 then
-                self.paddle:change_size('grow')
-            elseif powerup.type == 3 then
-                self.health = math.min(3, self.health + 1)
-            elseif powerup.type == 4 then
-                self.health = math.max(0, self.health - 1)
-            elseif powerup.type == 5 then 
-                for k, ball in pairs(self.ball) do
-                    ball.dy = ball.dy * 2
-                    ball.dx = ball.dx * 2
-                end
-            elseif powerup.type == 6 then
-                for k, ball in pairs(self.ball) do
-                    ball.dy = ball.dy / 2
-                    ball.dx = ball.dx / 2
-                end
-            elseif powerup.type == 7 then
-                for k, ball in pairs(self.ball) do
-                    ball.sx = math.max(0.5, ball.sx / 2)
-                    ball.sy = math.max(0.5, ball.sy / 2) 
-                    ball.width = math.max(4, ball.width / 2) 
-                    ball.height = math.max(4, ball.height / 2)
-                end
-            elseif powerup.type == 8 then
-                for k, ball in pairs(self.ball) do
-                    ball.sx = math.min(2, ball.sx * 2)
-                    ball.sy = math.min(2, ball.sy * 2)
-                    ball.width = math.min(16, ball.width * 2) 
-                    ball.height = math.min(16, ball.height * 2)
-                end
-            elseif powerup.type == 9 then
-                BallY = self.ball[1].y
-                BallX = self.ball[1].x
-                BalldY = self.ball[1].dy
-                BalldX = self.ball[1].dx
-                table.insert(self.ball, Ball(self.ball[1].skin))
-                table.insert(self.ball, Ball(self.ball[1].skin))
-                table.insert(self.ball, Ball(self.ball[1].skin))
-                for k, ball in pairs(self.ball) do
-                    ball.x = BallX
-                    ball.y = BallY
-                    ball.dy = BalldY >= BalldX and BalldY or math.random(-50, 50)
-                    ball.dx = BalldX > BalldY and BalldX or math.random(-50, 50)
-                end
-            elseif powerup.type == 10 then
-                self.flagKey = true
-            end
-            table.remove(self.powerup, k)
-        end
-    end
-
-    -- if ball goes below bounds, revert to serve state and decrease health
-    for k, ball in pairs(self.ball) do 
-        if ball.y >= VIRTUAL_HEIGHT then
-            table.remove(self.ball, k)
-            if #self.ball == 0 then
-                self.health = self.health - 1
-                gSounds['hurt']:play()
-                self.paddle:change_size('shrink')
-
-                if self.health == 0 then
-                    gStateMachine:change('game-over', {
-                        score = self.score,
-                        highScores = self.highScores
-                    })
-                else
-                    gStateMachine:change('serve', {
-                        paddle = self.paddle,
-                        bricks = self.bricks,
-                        health = self.health,
-                        score = self.score,
-                        highScores = self.highScores,
-                        level = self.level,
-                        recoverPoints = self.recoverPoints
-                    })
-                end
-            end
-        end
-    end
-
-    -- for rendering particle systems
-    for k, brick in pairs(self.bricks) do
-        brick:update(dt)
-    end
+    --self.board:checkFeasible()
 
     if love.keyboard.wasPressed('escape') then
         love.event.quit()
     end
+
+    -- go back to start if time runs out
+    if self.timer <= 0 then
+        
+        -- clear timers from prior PlayStates
+        Timer.clear()
+        
+        gSounds['game-over']:play()
+
+        gStateMachine:change('game-over', {
+            score = self.score
+        })
+    end
+
+    -- go to next level if we surpass score goal
+    if self.score >= self.scoreGoal then
+        
+        -- clear timers from prior PlayStates
+        -- always clear before you change state, else next state's timers
+        -- will also clear!
+        Timer.clear()
+
+        gSounds['next-level']:play()
+
+        -- change to begin game state with new level (incremented)
+        gStateMachine:change('begin-game', {
+            level = self.level + 1,
+            score = self.score
+        })
+    end
+
+    if self.canInput then
+        -- move cursor around based on bounds of grid, playing sounds
+        if love.keyboard.wasPressed('up') then
+            self.boardHighlightY = math.max(0, self.boardHighlightY - 1)
+            gSounds['select']:play()
+        elseif love.keyboard.wasPressed('down') then
+            self.boardHighlightY = math.min(7, self.boardHighlightY + 1)
+            gSounds['select']:play()
+        elseif love.keyboard.wasPressed('left') then
+            self.boardHighlightX = math.max(0, self.boardHighlightX - 1)
+            gSounds['select']:play()
+        elseif love.keyboard.wasPressed('right') then
+            self.boardHighlightX = math.min(7, self.boardHighlightX + 1)
+            gSounds['select']:play()
+        end
+
+        -- if we've pressed enter, to select or deselect a tile...
+        if love.keyboard.wasPressed('enter') or love.keyboard.wasPressed('return') then
+            
+            -- if same tile as currently highlighted, deselect
+            local x = self.boardHighlightX + 1
+            local y = self.boardHighlightY + 1
+            
+            -- if nothing is highlighted, highlight current tile
+            if not self.highlightedTile then
+                self.highlightedTile = self.board.tiles[y][x]
+
+            -- if we select the position already highlighted, remove highlight
+            elseif self.highlightedTile == self.board.tiles[y][x] then
+                self.highlightedTile = nil
+
+            -- if the difference between X and Y combined of this highlighted tile
+            -- vs the previous is not equal to 1, also remove highlight
+            elseif math.abs(self.highlightedTile.gridX - x) + math.abs(self.highlightedTile.gridY - y) > 1 then
+                gSounds['error']:play()
+                self.highlightedTile = nil
+            else
+                
+                -- swap grid positions of tiles
+                local tempX = self.highlightedTile.gridX
+                local tempY = self.highlightedTile.gridY
+
+                local newTile = self.board.tiles[y][x]
+
+                self.highlightedTile.gridX = newTile.gridX
+                self.highlightedTile.gridY = newTile.gridY
+                newTile.gridX = tempX
+                newTile.gridY = tempY
+
+                -- swap tiles in the tiles table
+                self.board.tiles[self.highlightedTile.gridY][self.highlightedTile.gridX] =
+                    self.highlightedTile
+
+                self.board.tiles[newTile.gridY][newTile.gridX] = newTile
+
+                -- tween coordinates between the two so they swap
+                Timer.tween(0.1, {
+                    [self.highlightedTile] = {x = newTile.x, y = newTile.y},
+                    [newTile] = {x = self.highlightedTile.x, y = self.highlightedTile.y}
+                })
+                -- once the swap is finished, we can tween falling blocks as needed
+                :finish(function()
+                    if not self.board:calculateMatches() then
+                        tempX = self.highlightedTile.gridX
+                        tempY = self.highlightedTile.gridY
+                        self.highlightedTile.gridX = newTile.gridX
+                        self.highlightedTile.gridY = newTile.gridY
+                        newTile.gridX = tempX
+                        newTile.gridY = tempY
+
+                        -- swap tiles in the tiles table
+                        self.board.tiles[self.highlightedTile.gridY][self.highlightedTile.gridX] =
+                            self.highlightedTile
+
+                        self.board.tiles[newTile.gridY][newTile.gridX] = newTile
+
+                        -- tween coordinates between the two so they swap
+                        Timer.tween(0.1, {
+                            [self.highlightedTile] = {x = newTile.x, y = newTile.y},
+                            [newTile] = {x = self.highlightedTile.x, y = self.highlightedTile.y}
+                        })
+                    end
+                    self:calculateMatches()
+                end)
+            end
+        end
+    end
+    
+    self.board:update(dt)
+
+    Timer.update(dt)
+end
+
+--[[
+    Calculates whether any matches were found on the board and tweens the needed
+    tiles to their new destinations if so. Also removes tiles from the board that
+    have matched and replaces them with new randomized tiles, deferring most of this
+    to the Board class.
+]]
+function PlayState:calculateMatches()
+    self.highlightedTile = nil
+
+    -- if we have any matches, remove them and tween the falling blocks that result
+    local matches = self.board:calculateMatches()
+    
+    if matches then
+        gSounds['match']:stop()
+        gSounds['match']:play()
+
+        -- add score for each match
+        for k, match in pairs(matches) do
+            for j, tile in pairs(match) do
+                self.score = self.score + 50 * (tile[2])
+            end
+        end
+
+        self.timer = self.timer + self.board.extraTime
+
+        -- remove any tiles that matched from the board, making empty spaces
+        self.board:removeMatches()
+
+        -- gets a table with tween values for tiles that should now fall
+        local tilesToFall = self.board:getFallingTiles()
+
+        -- tween new tiles that spawn from the ceiling over 0.25s to fill in
+        -- the new upper gaps that exist
+        Timer.tween(0.25, tilesToFall):finish(function()
+            
+            -- recursively call function in case new matches have been created
+            -- as a result of falling blocks once new blocks have finished falling
+            self:calculateMatches()
+        end)
+        
+        self.board:checkFeasible()
+    -- if no matches, we can continue playing
+    else
+        self.canInput = true
+    end
 end
 
 function PlayState:render()
-    -- render bricks
-    for k, brick in pairs(self.bricks) do
-        brick:render()
+    -- render board of tiles
+    self.board:render()
+
+    -- render highlighted tile if it exists
+    if self.highlightedTile then
+        
+        -- multiply so drawing white rect makes it brighter
+        love.graphics.setBlendMode('add')
+
+        love.graphics.setColor(1, 1, 1, 96/255)
+        love.graphics.rectangle('fill', (self.highlightedTile.gridX - 1) * 32 + (VIRTUAL_WIDTH - 272),
+            (self.highlightedTile.gridY - 1) * 32 + 16, 32, 32, 4)
+
+        -- back to alpha
+        love.graphics.setBlendMode('alpha')
     end
 
-    -- render all particle systems
-    for k, brick in pairs(self.bricks) do
-        brick:renderParticles()
+    -- render highlight rect color based on timer
+    if self.rectHighlighted then
+        love.graphics.setColor(217/255, 87/255, 99/255, 1)
+    else
+        love.graphics.setColor(172/255, 50/255, 50/255, 1)
     end
 
-    self.paddle:render()
+    -- draw actual cursor rect
+    love.graphics.setLineWidth(4)
+    love.graphics.rectangle('line', self.boardHighlightX * 32 + (VIRTUAL_WIDTH - 272),
+        self.boardHighlightY * 32 + 16, 32, 32, 4)
 
-    for k, ball in pairs(self.ball) do 
-        ball:render()
-    end
+    -- GUI text
+    love.graphics.setColor(56/255, 56/255, 56/255, 234/255)
+    love.graphics.rectangle('fill', 16, 16, 186, 116, 4)
 
-    for k, powerup in pairs(self.powerup) do
-        powerup:render()
-    end
-
-    renderScore(self.score)
-    renderHealth(self.health)
-
-    if self.flagKey then
-        love.graphics.draw(gTextures['main'], gFrames['powerups'][154] ,VIRTUAL_WIDTH / 2 + 85, 2, 0, 0.85, 0.85)
-    end
-
-    -- pause text, if paused
-    if self.paused then
-        love.graphics.setFont(gFonts['large'])
-        love.graphics.printf("PAUSED", 0, VIRTUAL_HEIGHT / 2 - 16, VIRTUAL_WIDTH, 'center')
-    end
-end
-
-function PlayState:checkVictory()
-    for k, brick in pairs(self.bricks) do
-        if brick.inPlay then
-            return false
-        end 
-    end
-
-    return true
+    love.graphics.setColor(99/255, 155/255, 1, 1)
+    love.graphics.setFont(gFonts['medium'])
+    love.graphics.printf('Level: ' .. tostring(self.level), 20, 24, 182, 'center')
+    love.graphics.printf('Score: ' .. tostring(self.score), 20, 52, 182, 'center')
+    love.graphics.printf('Goal : ' .. tostring(self.scoreGoal), 20, 80, 182, 'center')
+    love.graphics.printf('Timer: ' .. tostring(self.timer), 20, 108, 182, 'center')
 end

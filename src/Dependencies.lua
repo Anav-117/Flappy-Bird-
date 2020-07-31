@@ -1,52 +1,71 @@
--- push is a library that will allow us to draw our game at a virtual
--- resolution, instead of however large our window is; used to provide
--- a more retro aesthetic
---
--- https://github.com/Ulydev/push
-push = require 'lib/push'
+--[[
+    GD50
+    Match-3 Remake
 
--- the "Class" library we're using will allow us to represent anything in
--- our game as code, rather than keeping track of many disparate variables and
--- methods
+    Author: Colton Ogden
+    cogden@cs50.harvard.edu
+
+    -- Dependencies --
+
+    A file to organize all of the global dependencies for our project, as
+    well as the assets for our game, rather than pollute our main.lua file.
+]]
+
 --
--- https://github.com/vrld/hump/blob/master/class.lua
+-- libraries
+--
 Class = require 'lib/class'
 
--- a few global constants, centralized
-require 'src/constants'
+push = require 'lib/push'
 
--- the ball that travels around, breaking bricks and triggering lives lost
-require 'src/Ball'
+-- used for timers and tweening
+Timer = require 'lib/knife.timer'
 
--- the entities in our game map that give us points when we collide with them
-require 'src/Brick'
+--
+-- our own code
+--
 
--- a class used to generate our brick layouts (levels)
-require 'src/LevelMaker'
-
--- the rectangular entity the player controls, which deflects the ball
-require 'src/Paddle'
-
---Powerup Class
-require 'src/Powerup'
-
--- a basic StateMachine class which will allow us to transition to and from
--- game states smoothly and avoid monolithic code in one file
+-- utility
 require 'src/StateMachine'
-
--- utility functions, mainly for splitting our sprite sheet into various Quads
--- of differing sizes for paddles, balls, bricks, etc.
 require 'src/Util'
 
--- each of the individual states our game can be in at once; each state has
--- its own update and render methods that can be called by our state machine
--- each frame, to avoid bulky code in main.lua
+-- game pieces
+require 'src/Board'
+require 'src/Tile'
+
+-- game states
 require 'src/states/BaseState'
-require 'src/states/EnterHighScoreState'
+require 'src/states/BeginGameState'
 require 'src/states/GameOverState'
-require 'src/states/HighScoreState'
-require 'src/states/PaddleSelectState'
 require 'src/states/PlayState'
-require 'src/states/ServeState'
 require 'src/states/StartState'
-require 'src/states/VictoryState'
+
+gSounds = {
+    ['music'] = love.audio.newSource('sounds/music3.mp3', 'static'),
+    ['select'] = love.audio.newSource('sounds/select.wav', 'static'),
+    ['error'] = love.audio.newSource('sounds/error.wav', 'static'),
+    ['match'] = love.audio.newSource('sounds/match.wav', 'static'),
+    ['clock'] = love.audio.newSource('sounds/clock.wav', 'static'),
+    ['game-over'] = love.audio.newSource('sounds/game-over.wav', 'static'),
+    ['next-level'] = love.audio.newSource('sounds/next-level.wav', 'static')
+}
+
+gTextures = {
+    ['main'] = love.graphics.newImage('graphics/match3.png'),
+    ['background'] = love.graphics.newImage('graphics/background.png'),
+    ['particle'] = love.graphics.newImage('graphics/particle.png')
+}
+
+gFrames = {
+    
+    -- divided into sets for each tile type in this game, instead of one large
+    -- table of Quads
+    ['tiles'] = GenerateTileQuads(gTextures['main'])
+}
+
+-- this time, we're keeping our fonts in a global table for readability
+gFonts = {
+    ['small'] = love.graphics.newFont('fonts/font.ttf', 8),
+    ['medium'] = love.graphics.newFont('fonts/font.ttf', 16),
+    ['large'] = love.graphics.newFont('fonts/font.ttf', 32)
+}

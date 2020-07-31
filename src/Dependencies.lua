@@ -1,108 +1,86 @@
---[[
-    GD50
-    Super Mario Bros. Remake
-
-    Author: Colton Ogden
-    cogden@cs50.harvard.edu
-
-    -- Dependencies --
-
-    A file to organize all of the global dependencies for our project, as
-    well as the assets for our game, rather than pollute our main.lua file.
-]]
-
 --
 -- libraries
 --
+
 Class = require 'lib/class'
+Event = require 'lib/knife.event'
 push = require 'lib/push'
 Timer = require 'lib/knife.timer'
 
---
--- our own code
---
-
--- utility
+require 'src/Animation'
 require 'src/constants'
+require 'src/Entity'
+require 'src/entity_defs'
+require 'src/GameObject'
+require 'src/game_objects'
+require 'src/Hitbox'
+require 'src/Player'
 require 'src/StateMachine'
 require 'src/Util'
 
--- game states
+require 'src/world/Doorway'
+require 'src/world/Dungeon'
+require 'src/world/Room'
+
 require 'src/states/BaseState'
+
+require 'src/states/entity/EntityIdleState'
+require 'src/states/entity/EntityWalkState'
+
+require 'src/states/entity/player/PlayerIdleState'
+require 'src/states/entity/player/PlayerSwingSwordState'
+require 'src/states/entity/player/PlayerPickupPotState'
+require 'src/states/entity/player/PlayerCarryPotState'
+require 'src/states/entity/player/PlayerCarryIdleState'
+require 'src/states/entity/player/PlayerThrowPotState'
+require 'src/states/entity/player/PlayerWalkState'
+
+require 'src/states/game/GameOverState'
 require 'src/states/game/PlayState'
 require 'src/states/game/StartState'
 
--- entity states
-require 'src/states/entity/PlayerFallingState'
-require 'src/states/entity/PlayerIdleState'
-require 'src/states/entity/PlayerJumpState'
-require 'src/states/entity/PlayerWalkingState'
-
-require 'src/states/entity/snail/SnailChasingState'
-require 'src/states/entity/snail/SnailIdleState'
-require 'src/states/entity/snail/SnailMovingState'
-
--- general
-require 'src/Animation'
-require 'src/Entity'
-require 'src/GameObject'
-require 'src/GameLevel'
-require 'src/LevelMaker'
-require 'src/Player'
-require 'src/Snail'
-require 'src/Tile'
-require 'src/TileMap'
-
-
-gSounds = {
-    ['jump'] = love.audio.newSource('sounds/jump.wav', 'static'),
-    ['death'] = love.audio.newSource('sounds/death.wav', 'static'),
-    ['music'] = love.audio.newSource('sounds/music.wav', 'static'),
-    ['powerup-reveal'] = love.audio.newSource('sounds/powerup-reveal.wav', 'static'),
-    ['pickup'] = love.audio.newSource('sounds/pickup.wav', 'static'),
-    ['empty-block'] = love.audio.newSource('sounds/empty-block.wav', 'static'),
-    ['kill'] = love.audio.newSource('sounds/kill.wav', 'static'),
-    ['kill2'] = love.audio.newSource('sounds/kill2.wav', 'static')
-}
-
 gTextures = {
-    ['tiles'] = love.graphics.newImage('graphics/tiles.png'),
-    ['toppers'] = love.graphics.newImage('graphics/tile_tops.png'),
-    ['bushes'] = love.graphics.newImage('graphics/bushes_and_cacti.png'),
-    ['jump-blocks'] = love.graphics.newImage('graphics/jump_blocks.png'),
-    ['gems'] = love.graphics.newImage('graphics/gems.png'),
-    ['backgrounds'] = love.graphics.newImage('graphics/backgrounds.png'),
-    ['green-alien'] = love.graphics.newImage('graphics/green_alien.png'),
-    ['creatures'] = love.graphics.newImage('graphics/creatures.png'),
-    ['key'] = love.graphics.newImage('graphics/keys_and_locks.png'),
-    ['flag'] = love.graphics.newImage('graphics/flags.png')
+    ['tiles'] = love.graphics.newImage('graphics/tilesheet.png'),
+    ['background'] = love.graphics.newImage('graphics/background.png'),
+    ['character-walk'] = love.graphics.newImage('graphics/character_walk.png'),
+    ['character-swing-sword'] = love.graphics.newImage('graphics/character_swing_sword.png'),
+    ['character-pickup-pot'] = love.graphics.newImage('graphics/character_pot_lift.png'),
+    ['character-carry-pot'] = love.graphics.newImage('graphics/character_pot_walk.png'),
+    ['hearts'] = love.graphics.newImage('graphics/hearts.png'),
+    ['switches'] = love.graphics.newImage('graphics/switches.png'),
+    ['entities'] = love.graphics.newImage('graphics/entities.png'),
+    ['pots'] = love.graphics.newImage('graphics/pot.png')
 }
 
 gFrames = {
-    ['tiles'] = GenerateQuads(gTextures['tiles'], TILE_SIZE, TILE_SIZE),
-    
-    ['toppers'] = GenerateQuads(gTextures['toppers'], TILE_SIZE, TILE_SIZE),
-    
-    ['bushes'] = GenerateQuads(gTextures['bushes'], 16, 16),
-    ['jump-blocks'] = GenerateQuads(gTextures['jump-blocks'], 16, 16),
-    ['gems'] = GenerateQuads(gTextures['gems'], 16, 16),
-    ['backgrounds'] = GenerateQuads(gTextures['backgrounds'], 256, 128),
-    ['green-alien'] = GenerateQuads(gTextures['green-alien'], 16, 20),
-    ['creatures'] = GenerateQuads(gTextures['creatures'], 16, 16),
-    ['key'] = GenerateQuads(gTextures['key'], 16, 16),
-    ['flag'] = GenerateQuads(gTextures['flag'], 8, 16)
+    ['tiles'] = GenerateQuads(gTextures['tiles'], 16, 16),
+    ['character-walk'] = GenerateQuads(gTextures['character-walk'], 16, 32),
+    ['character-swing-sword'] = GenerateQuads(gTextures['character-swing-sword'], 32, 32),
+    ['character-pickup-pot'] = GenerateQuads(gTextures['character-pickup-pot'], 16, 32),
+    ['character-carry-pot'] = GenerateQuads(gTextures['character-carry-pot'], 16, 32),
+    ['entities'] = GenerateQuads(gTextures['entities'], 16, 16),
+    ['hearts'] = GenerateQuads(gTextures['hearts'], 16, 16),
+    ['switches'] = GenerateQuads(gTextures['switches'], 16, 18),
+    ['pots'] = GenerateQuads(gTextures['pots'], 16, 16)
 }
-
--- these need to be added after gFrames is initialized because they refer to gFrames from within
-gFrames['tilesets'] = GenerateTileSets(gFrames['tiles'], 
-    TILE_SETS_WIDE, TILE_SETS_TALL, TILE_SET_WIDTH, TILE_SET_HEIGHT)
-
-gFrames['toppersets'] = GenerateTileSets(gFrames['toppers'], 
-    TOPPER_SETS_WIDE, TOPPER_SETS_TALL, TILE_SET_WIDTH, TILE_SET_HEIGHT)
 
 gFonts = {
     ['small'] = love.graphics.newFont('fonts/font.ttf', 8),
     ['medium'] = love.graphics.newFont('fonts/font.ttf', 16),
     ['large'] = love.graphics.newFont('fonts/font.ttf', 32),
-    ['title'] = love.graphics.newFont('fonts/ArcadeAlternate.ttf', 32)
+    ['gothic-medium'] = love.graphics.newFont('fonts/GothicPixels.ttf', 16),
+    ['gothic-large'] = love.graphics.newFont('fonts/GothicPixels.ttf', 32),
+    ['zelda'] = love.graphics.newFont('fonts/zelda.otf', 64),
+    ['zelda-small'] = love.graphics.newFont('fonts/zelda.otf', 32)
+}
+
+gSounds = {
+    ['music'] = love.audio.newSource('sounds/music.mp3', 'static'),
+    ['sword'] = love.audio.newSource('sounds/sword.wav', 'static'),
+    ['hit-enemy'] = love.audio.newSource('sounds/hit_enemy.wav', 'static'),
+    ['hit-player'] = love.audio.newSource('sounds/hit_player.wav', 'static'),
+    ['door'] = love.audio.newSource('sounds/door.wav', 'static'),
+    ['heart'] = love.audio.newSource('sounds/heart.wav', 'static'),
+    ['pot'] = love.audio.newSource('sounds/pot.wav', 'static'),
+    ['pot-break'] = love.audio.newSource('sounds/pot_break.wav', 'static')
 }

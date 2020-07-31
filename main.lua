@@ -1,48 +1,41 @@
 --[[
     GD50
-    Super Mario Bros. Remake
+    Legend of Zelda
 
     Author: Colton Ogden
     cogden@cs50.harvard.edu
-    
-    A classic platformer in the style of Super Mario Bros., using a free
-    art pack. Super Mario Bros. was instrumental in the resurgence of video
-    games in the mid-80s, following the infamous crash shortly after the
-    Atari age of the late 70s. The goal is to navigate various levels from
-    a side perspective, where jumping onto enemies inflicts damage and
-    jumping up into blocks typically breaks them or reveals a powerup.
-
-    Art pack:
-    https://opengameart.org/content/kenney-16x16
-
-    Music:
-    https://freesound.org/people/Sirkoto51/sounds/393818/
 ]]
 
 require 'src/Dependencies'
 
 function love.load()
-    love.graphics.setDefaultFilter('nearest', 'nearest')
-    love.graphics.setFont(gFonts['medium'])
-    love.window.setTitle('Super 50 Bros.')
-    love._openConsole()
-
     math.randomseed(os.time())
-    
+    love.window.setTitle('Legend of Zelda')
+    love.graphics.setDefaultFilter('nearest', 'nearest')
+
     push:setupScreen(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, WINDOW_WIDTH, WINDOW_HEIGHT, {
         fullscreen = true,
         vsync = true,
         resizable = true
     })
 
+    --love._openConsole()
+
+    love.graphics.setFont(gFonts['small'])
+
+    push:setupCanvas({
+        { name = 'stencil_canvas', stencil = true}
+    })   
+
     gStateMachine = StateMachine {
         ['start'] = function() return StartState() end,
-        ['play'] = function() return PlayState() end
+        ['play'] = function() return PlayState() end,
+        ['game-over'] = function() return GameOverState() end
     }
     gStateMachine:change('start')
 
     gSounds['music']:setLooping(true)
-    gSounds['music']:setVolume(0.25)
+    gSounds['music']:setVolume(0.5)
     gSounds['music']:play()
 
     love.keyboard.keysPressed = {}
@@ -53,10 +46,6 @@ function love.resize(w, h)
 end
 
 function love.keypressed(key)
-    if key == 'escape' then
-        love.event.quit()
-    end
-
     love.keyboard.keysPressed[key] = true
 end
 
@@ -65,6 +54,7 @@ function love.keyboard.wasPressed(key)
 end
 
 function love.update(dt)
+    Timer.update(dt)
     gStateMachine:update(dt)
 
     love.keyboard.keysPressed = {}

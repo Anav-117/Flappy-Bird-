@@ -1,183 +1,310 @@
 --[[
-    GD50 2018
-    Flappy Bird Remake
+    GD50
+    Breakout Remake
 
     Author: Colton Ogden
     cogden@cs50.harvard.edu
 
-    A mobile game by Dong Nguyen that went viral in 2013, utilizing a very simple 
-    but effective gameplay mechanic of avoiding pipes indefinitely by just tapping 
-    the screen, making the player's bird avatar flap its wings and move upwards slightly. 
-    A variant of popular games like "Helicopter Game" that floated around the internet
-    for years prior. Illustrates some of the most basic procedural generation of game
-    levels possible as by having pipes stick out of the ground by varying amounts, acting
-    as an infinitely generated obstacle course for the player.
+    Originally developed by Atari in 1976. An effective evolution of
+    Pong, Breakout ditched the two-player mechanic in favor of a single-
+    player game where the player, still controlling a paddle, was tasked
+    with eliminating a screen full of differently placed bricks of varying
+    values by deflecting a ball back at them.
+
+    This version is built to more closely resemble the NES than
+    the original Pong machines or the Atari 2600 in terms of
+    resolution, though in widescreen (16:9) so it looks nicer on 
+    modern systems.
+
+    Credit for graphics (amazing work!):
+    https://opengameart.org/users/buch
+
+    Credit for music (great loop):
+    http://freesound.org/people/joshuaempyre/sounds/251461/
+    http://www.soundcloud.com/empyreanma
 ]]
 
--- push is a library that will allow us to draw our game at a virtual
--- resolution, instead of however large our window is; used to provide
--- a more retro aesthetic
---
--- https://github.com/Ulydev/push
-push = require 'push'
+require 'src/Dependencies'
 
--- the "Class" library we're using will allow us to represent anything in
--- our game as code, rather than keeping track of many disparate variables and
--- methods
---
--- https://github.com/vrld/hump/blob/master/class.lua
-Class = require 'class'
-
--- a basic StateMachine class which will allow us to transition to and from
--- game states smoothly and avoid monolithic code in one file
-require 'StateMachine'
-
--- all states our StateMachine can transition between
-require 'states/BaseState'
-require 'states/CountdownState'
-require 'states/PlayState'
-require 'states/ScoreState'
-require 'states/TitleScreenState'
-
-require 'Bird'
-require 'Pipe'
-require 'PipePair'
-
--- physical screen dimensions
-WINDOW_WIDTH = 1280
-WINDOW_HEIGHT = 720
-
--- virtual resolution dimensions
-VIRTUAL_WIDTH = 512
-VIRTUAL_HEIGHT = 288
-
-local background = love.graphics.newImage('background.png')
-local backgroundScroll = 0
-
-local ground = love.graphics.newImage('ground.png')
-local groundScroll = 0
-
-BACKGROUND_SCROLL_SPEED = 30
-GROUND_SCROLL_SPEED = 60
-
-local BACKGROUND_LOOPING_POINT = 413
-
+--[[
+    Called just once at the beginning of the game; used to set up
+    game objects, variables, etc. and prepare the game world.
+]]
 function love.load()
-    -- initialize our nearest-neighbor filter
+    -- set love's default filter to "nearest-neighbor", which essentially
+    -- means there will be no filtering of pixels (blurriness), which is
+    -- important for a nice crisp, 2D look
     love.graphics.setDefaultFilter('nearest', 'nearest')
-    
-    -- seed the RNG
+
+    -- seed the RNG so that calls to random are always random
     math.randomseed(os.time())
 
-    -- app window title
-    love.window.setTitle('Flappy Bird')
+    -- set the application title bar
+    love.window.setTitle('Breakout')
 
     -- initialize our nice-looking retro text fonts
-    smallFont = love.graphics.newFont('font.ttf', 8)
-    mediumFont = love.graphics.newFont('flappy.ttf', 14)
-    flappyFont = love.graphics.newFont('flappy.ttf', 28)
-    hugeFont = love.graphics.newFont('flappy.ttf', 56)
-    love.graphics.setFont(flappyFont)
+    gFonts = {
+        ['small'] = love.graphics.newFont('fonts/font.ttf', 8),
+        ['medium'] = love.graphics.newFont('fonts/font.ttf', 16),
+        ['large'] = love.graphics.newFont('fonts/font.ttf', 32)
+    }
+    love.graphics.setFont(gFonts['small'])
 
-    prizeTable = {
-        [1] = love.graphics.newImage('prize-1.png'),
-        [2] = love.graphics.newImage('prize-2.png'),
-        [3] = love.graphics.newImage('prize-3.png'),
-        [4] = love.graphics.newImage('prize-4.png')
+    -- load up the graphics we'll be using throughout our states
+    gTextures = {
+        ['background'] = love.graphics.newImage('graphics/background.png'),
+        ['main'] = love.graphics.newImage('graphics/breakout.png'),
+        ['arrows'] = love.graphics.newImage('graphics/arrows.png'),
+        ['hearts'] = love.graphics.newImage('graphics/hearts.png'),
+        ['particle'] = love.graphics.newImage('graphics/particle.png')
     }
 
-    -- initialize our table of sounds
-    sounds = {
-        ['jump'] = love.audio.newSource('jump.wav', 'static'),
-        ['explosion'] = love.audio.newSource('explosion.wav', 'static'),
-        ['hurt'] = love.audio.newSource('hurt.wav', 'static'),
-        ['score'] = love.audio.newSource('score.wav', 'static'),
-        ['paused'] = love.audio.newSource('paused.wav', 'static'),
-        -- https://freesound.org/people/xsgianni/sounds/388079/
-        ['music'] = love.audio.newSource('marios_way.mp3', 'static')
+    -- Quads we will generate for all of our textures; Quads allow us
+    -- to show only part of a texture and not the entire thing
+    gFrames = {
+        ['arrows'] = GenerateQuads(gTextures['arrows'], 24, 24),
+        ['paddles'] = GenerateQuadsPaddles(gTextures['main']),
+        ['balls'] = GenerateQuadsBalls(gTextures['main']),
+        ['bricks'] = GenerateQuadsBricks(gTextures['main']),
+        ['hearts'] = GenerateQuads(gTextures['hearts'], 10, 9),
+        ['powerups'] = GenerateQuads(gTextures['main'], 16, 16)
     }
-
-    -- kick off music
-    sounds['music']:setLooping(true)
-    sounds['music']:setVolume(0.3)
-    sounds['music']:play()
-
-    -- initialize our virtual resolution
+    
+    -- initialize our virtual resolution, which will be rendered within our
+    -- actual window no matter its dimensions
     push:setupScreen(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, WINDOW_WIDTH, WINDOW_HEIGHT, {
         vsync = true,
         fullscreen = true,
         resizable = true
     })
 
-    -- initialize state machine with all state-returning functions
-    gStateMachine = StateMachine {
-        ['title'] = function() return TitleScreenState() end,
-        ['countdown'] = function() return CountdownState() end,
-        ['play'] = function() return PlayState() end,
-        ['score'] = function() return ScoreState() end
+    -- set up our sound effects; later, we can just index this table and
+    -- call each entry's `play` method
+    gSounds = {
+        ['paddle-hit'] = love.audio.newSource('sounds/paddle_hit.wav', 'static'),
+        ['score'] = love.audio.newSource('sounds/score.wav', 'static'),
+        ['wall-hit'] = love.audio.newSource('sounds/wall_hit.wav', 'static'),
+        ['confirm'] = love.audio.newSource('sounds/confirm.wav', 'static'),
+        ['select'] = love.audio.newSource('sounds/select.wav', 'static'),
+        ['no-select'] = love.audio.newSource('sounds/no-select.wav', 'static'),
+        ['brick-hit-1'] = love.audio.newSource('sounds/brick-hit-1.wav', 'static'),
+        ['brick-hit-2'] = love.audio.newSource('sounds/brick-hit-2.wav', 'static'),
+        ['hurt'] = love.audio.newSource('sounds/hurt.wav', 'static'),
+        ['victory'] = love.audio.newSource('sounds/victory.wav', 'static'),
+        ['recover'] = love.audio.newSource('sounds/recover.wav', 'static'),
+        ['high-score'] = love.audio.newSource('sounds/high_score.wav', 'static'),
+        ['pause'] = love.audio.newSource('sounds/pause.wav', 'static'),
+        ['locked-brick'] = love.audio.newSource('sounds/lockedBrick.wav', 'static'),
+        ['key'] = love.audio.newSource('sounds/key.wav', 'static'),
+        ['powerup'] = love.audio.newSource('sounds/powerup.wav', 'static'),
+        ['break-lock'] = love.audio.newSource('sounds/lock.wav', 'static'),
+
+        ['music'] = love.audio.newSource('sounds/music.wav', 'static')
     }
-    gStateMachine:change('title')
 
-    -- initialize input table
+    -- the state machine we'll be using to transition between various states
+    -- in our game instead of clumping them together in our update and draw
+    -- methods
+    --
+    -- our current game state can be any of the following:
+    -- 1. 'start' (the beginning of the game, where we're told to press Enter)
+    -- 2. 'paddle-select' (where we get to choose the color of our paddle)
+    -- 3. 'serve' (waiting on a key press to serve the ball)
+    -- 4. 'play' (the ball is in play, bouncing between paddles)
+    -- 5. 'victory' (the current level is over, with a victory jingle)
+    -- 6. 'game-over' (the player has lost; display score and allow restart)
+    gStateMachine = StateMachine {
+        ['start'] = function() return StartState() end,
+        ['play'] = function() return PlayState() end,
+        ['serve'] = function() return ServeState() end,
+        ['game-over'] = function() return GameOverState() end,
+        ['victory'] = function() return VictoryState() end,
+        ['high-scores'] = function() return HighScoreState() end,
+        ['enter-high-score'] = function() return EnterHighScoreState() end,
+        ['paddle-select'] = function() return PaddleSelectState() end
+    }
+    gStateMachine:change('start', {
+        highScores = loadHighScores()
+    })
+
+    -- play our music outside of all states and set it to looping
+    gSounds['music']:setVolume(0.3)
+    gSounds['music']:play()
+    gSounds['music']:setLooping(true)
+
+    -- a table we'll use to keep track of which keys have been pressed this
+    -- frame, to get around the fact that LÖVE's default callback won't let us
+    -- test for input from within other functions
     love.keyboard.keysPressed = {}
-
-    -- initialize mouse input table
-    love.mouse.buttonsPressed = {}
 end
 
+--[[
+    Called whenever we change the dimensions of our window, as by dragging
+    out its bottom corner, for example. In this case, we only need to worry
+    about calling out to `push` to handle the resizing. Takes in a `w` and
+    `h` variable representing width and height, respectively.
+]]
 function love.resize(w, h)
     push:resize(w, h)
 end
 
+--[[
+    Called every frame, passing in `dt` since the last frame. `dt`
+    is short for `deltaTime` and is measured in seconds. Multiplying
+    this by any changes we wish to make in our game will allow our
+    game to perform consistently across all hardware; otherwise, any
+    changes we make will be applied as fast as possible and will vary
+    across system hardware.
+]]
+function love.update(dt)
+    -- this time, we pass in dt to the state object we're currently using
+    gStateMachine:update(dt)
+
+    -- reset keys pressed
+    love.keyboard.keysPressed = {}
+end
+
+--[[
+    A callback that processes key strokes as they happen, just the once.
+    Does not account for keys that are held down, which is handled by a
+    separate function (`love.keyboard.isDown`). Useful for when we want
+    things to happen right away, just once, like when we want to quit.
+]]
 function love.keypressed(key)
     -- add to our table of keys pressed this frame
     love.keyboard.keysPressed[key] = true
+end
 
-    if key == 'escape' then
-        love.event.quit()
+--[[
+    A custom function that will let us test for individual keystrokes outside
+    of the default `love.keypressed` callback, since we can't call that logic
+    elsewhere by default.
+]]
+function love.keyboard.wasPressed(key)
+    if love.keyboard.keysPressed[key] then
+        return true
+    else
+        return false
     end
 end
 
 --[[
-    LÖVE2D callback fired each time a mouse button is pressed; gives us the
-    X and Y of the mouse, as well as the button in question.
+    Called each frame after update; is responsible simply for
+    drawing all of our game objects and more to the screen.
 ]]
-function love.mousepressed(x, y, button)
-    love.mouse.buttonsPressed[button] = true
-end
-
---[[
-    Custom function to extend LÖVE's input handling; returns whether a given
-    key was set to true in our input table this frame.
-]]
-function love.keyboard.wasPressed(key)
-    return love.keyboard.keysPressed[key]
-end
-
---[[
-    Equivalent to our keyboard function from before, but for the mouse buttons.
-]]
-function love.mouse.wasPressed(button)
-    return love.mouse.buttonsPressed[button]
-end
-
-function love.update(dt)
-    -- scroll our background and ground, looping back to 0 after a certain amount
-    backgroundScroll = (backgroundScroll + BACKGROUND_SCROLL_SPEED * dt) % BACKGROUND_LOOPING_POINT
-    groundScroll = (groundScroll + GROUND_SCROLL_SPEED * dt) % VIRTUAL_WIDTH
-
-    gStateMachine:update(dt)
-
-    love.keyboard.keysPressed = {}
-    love.mouse.buttonsPressed = {}
-end
-
 function love.draw()
-    push:start()
+    -- begin drawing with push, in our virtual resolution
+    push:apply('start')
+
+    -- background should be drawn regardless of state, scaled to fit our
+    -- virtual resolution
+    local backgroundWidth = gTextures['background']:getWidth()
+    local backgroundHeight = gTextures['background']:getHeight()
+
+    love.graphics.draw(gTextures['background'], 
+        -- draw at coordinates 0, 0
+        0, 0, 
+        -- no rotation
+        0,
+        -- scale factors on X and Y axis so it fills the screen
+        VIRTUAL_WIDTH / (backgroundWidth - 1), VIRTUAL_HEIGHT / (backgroundHeight - 1))
     
-    love.graphics.draw(background, -backgroundScroll, 0)
+    -- use the state machine to defer rendering to the current state we're in
     gStateMachine:render()
-    love.graphics.draw(ground, -groundScroll, VIRTUAL_HEIGHT - 16)
     
-    push:finish()
+    -- display FPS for debugging; simply comment out to remove
+    displayFPS()
+    
+    push:apply('end')
+end
+
+--[[
+    Loads high scores from a .lst file, saved in LÖVE2D's default save directory in a subfolder
+    called 'breakout'.
+]]
+function loadHighScores()
+    love.filesystem.setIdentity('breakout')
+
+    -- if the file doesn't exist, initialize it with some default scores
+    if not love.filesystem.getInfo('breakout.lst') then
+        local scores = ''
+        for i = 10, 1, -1 do
+            scores = scores .. 'CTO\n'
+            scores = scores .. tostring(i * 1000) .. '\n'
+        end
+
+        love.filesystem.write('breakout.lst', scores)
+    end
+
+    -- flag for whether we're reading a name or not
+    local name = true
+    local currentName = nil
+    local counter = 1
+
+    -- initialize scores table with at least 10 blank entries
+    local scores = {}
+
+    for i = 1, 10 do
+        -- blank table; each will hold a name and a score
+        scores[i] = {
+            name = nil,
+            score = nil
+        }
+    end
+
+    -- iterate over each line in the file, filling in names and scores
+    for line in love.filesystem.lines('breakout.lst') do
+        if name then
+            scores[counter].name = string.sub(line, 1, 3)
+        else
+            scores[counter].score = tonumber(line)
+            counter = counter + 1
+        end
+
+        -- flip the name flag
+        name = not name
+    end
+
+    return scores
+end
+
+--[[
+    Renders hearts based on how much health the player has. First renders
+    full hearts, then empty hearts for however much health we're missing.
+]]
+function renderHealth(health)
+    -- start of our health rendering
+    local healthX = VIRTUAL_WIDTH - 100
+    
+    -- render health left
+    for i = 1, health do
+        love.graphics.draw(gTextures['hearts'], gFrames['hearts'][1], healthX, 4)
+        healthX = healthX + 11
+    end
+
+    -- render missing health
+    for i = 1, 3 - health do
+        love.graphics.draw(gTextures['hearts'], gFrames['hearts'][2], healthX, 4)
+        healthX = healthX + 11
+    end
+end
+
+--[[
+    Renders the current FPS.
+]]
+function displayFPS()
+    -- simple FPS display across all states
+    love.graphics.setFont(gFonts['small'])
+    love.graphics.setColor(0, 255, 0, 255)
+    love.graphics.print('FPS: ' .. tostring(love.timer.getFPS()), 5, 5)
+end
+
+--[[
+    Simply renders the player's score at the top right, with left-side padding
+    for the score number.
+]]
+function renderScore(score)
+    love.graphics.setFont(gFonts['small'])
+    love.graphics.print('Score:', VIRTUAL_WIDTH - 60, 5)
+    love.graphics.printf(tostring(score), VIRTUAL_WIDTH - 50, 5, 40, 'right')
 end

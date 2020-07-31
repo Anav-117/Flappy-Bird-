@@ -1,64 +1,46 @@
 --[[
     GD50
-    Match-3 Remake
-
-    -- Tile Class --
+    -- Super Mario Bros. Remake --
 
     Author: Colton Ogden
     cogden@cs50.harvard.edu
-
-    The individual tiles that make up our game board. Each Tile can have a
-    color and a variety, with the varietes adding extra points to the matches.
 ]]
 
 Tile = Class{}
 
-function Tile:init(x, y, color, variety)
-    
-    -- board positions
-    self.gridX = x
-    self.gridY = y
+function Tile:init(x, y, id, topper, tileset, topperset)
+    self.x = x
+    self.y = y
 
-    -- coordinate positions
-    self.x = (self.gridX - 1) * 32
-    self.y = (self.gridY - 1) * 32
+    self.width = TILE_SIZE
+    self.height = TILE_SIZE
 
-    -- tile appearance/points
-    self.color = color
-    self.variety = variety
-    
-    self.isShiny = false
-
-    self.psystem = love.graphics.newParticleSystem(gTextures['particle'], 64)
-    --self.psystem:setEmitterLifetime(10)
-    self.psystem:setParticleLifetime(0.5, 1)
-    self.psystem:setEmissionArea('normal', 8, 8)
-    self.psystem:setSizes(0.5, 0.35, 0.25, 0.15)
-    self.psystem:setLinearAcceleration(0, 0, 0, 0)
-    --self.psystem:start()
+    self.id = id
+    self.tileset = tileset
+    self.topper = topper
+    self.topperset = topperset
 end
 
-function Tile:update(dt)
-    self.psystem:update(dt)
-    if self.psystem:isActive() then
-        self.psystem:emit(1)
+--[[
+    Checks to see whether this ID is whitelisted as collidable in a global constants table.
+]]
+function Tile:collidable(target)
+    for k, v in pairs(COLLIDABLE_TILES) do
+        if v == self.id then
+            return true
+        end
     end
+
+    return false
 end
 
-function Tile:render(x, y)
+function Tile:render()
+    love.graphics.draw(gTextures['tiles'], gFrames['tilesets'][self.tileset][self.id],
+        (self.x - 1) * TILE_SIZE, (self.y - 1) * TILE_SIZE)
     
-    -- draw shadow
-    love.graphics.setColor(34/255, 32/255, 52/255, 1)
-    love.graphics.draw(gTextures['main'], gFrames['tiles'][self.color][self.variety],
-        self.x + x + 2, self.y + y + 2)
-
-    -- draw tile itself
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(gTextures['main'], gFrames['tiles'][self.color][self.variety],
-        self.x + x, self.y + y)
-
-    if self.isShiny then
-        love.graphics.setColor(236/255, 245/255, 66/255, 1)
-        love.graphics.draw(self.psystem, self.x + x + 16, self.y + y + 16)
+    -- tile top layer for graphical variety
+    if self.topper then
+        love.graphics.draw(gTextures['toppers'], gFrames['toppersets'][self.topperset][self.id],
+            (self.x - 1) * TILE_SIZE, (self.y - 1) * TILE_SIZE)
     end
 end

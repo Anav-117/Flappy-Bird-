@@ -1,6 +1,6 @@
 --[[
     GD50
-    Match-3 Remake
+    Super Mario Bros. Remake
 
     Author: Colton Ogden
     cogden@cs50.harvard.edu
@@ -15,10 +15,7 @@
 -- libraries
 --
 Class = require 'lib/class'
-
 push = require 'lib/push'
-
--- used for timers and tweening
 Timer = require 'lib/knife.timer'
 
 --
@@ -26,46 +23,86 @@ Timer = require 'lib/knife.timer'
 --
 
 -- utility
+require 'src/constants'
 require 'src/StateMachine'
 require 'src/Util'
 
--- game pieces
-require 'src/Board'
-require 'src/Tile'
-
 -- game states
 require 'src/states/BaseState'
-require 'src/states/BeginGameState'
-require 'src/states/GameOverState'
-require 'src/states/PlayState'
-require 'src/states/StartState'
+require 'src/states/game/PlayState'
+require 'src/states/game/StartState'
+
+-- entity states
+require 'src/states/entity/PlayerFallingState'
+require 'src/states/entity/PlayerIdleState'
+require 'src/states/entity/PlayerJumpState'
+require 'src/states/entity/PlayerWalkingState'
+
+require 'src/states/entity/snail/SnailChasingState'
+require 'src/states/entity/snail/SnailIdleState'
+require 'src/states/entity/snail/SnailMovingState'
+
+-- general
+require 'src/Animation'
+require 'src/Entity'
+require 'src/GameObject'
+require 'src/GameLevel'
+require 'src/LevelMaker'
+require 'src/Player'
+require 'src/Snail'
+require 'src/Tile'
+require 'src/TileMap'
+
 
 gSounds = {
-    ['music'] = love.audio.newSource('sounds/music3.mp3', 'static'),
-    ['select'] = love.audio.newSource('sounds/select.wav', 'static'),
-    ['error'] = love.audio.newSource('sounds/error.wav', 'static'),
-    ['match'] = love.audio.newSource('sounds/match.wav', 'static'),
-    ['clock'] = love.audio.newSource('sounds/clock.wav', 'static'),
-    ['game-over'] = love.audio.newSource('sounds/game-over.wav', 'static'),
-    ['next-level'] = love.audio.newSource('sounds/next-level.wav', 'static')
+    ['jump'] = love.audio.newSource('sounds/jump.wav', 'static'),
+    ['death'] = love.audio.newSource('sounds/death.wav', 'static'),
+    ['music'] = love.audio.newSource('sounds/music.wav', 'static'),
+    ['powerup-reveal'] = love.audio.newSource('sounds/powerup-reveal.wav', 'static'),
+    ['pickup'] = love.audio.newSource('sounds/pickup.wav', 'static'),
+    ['empty-block'] = love.audio.newSource('sounds/empty-block.wav', 'static'),
+    ['kill'] = love.audio.newSource('sounds/kill.wav', 'static'),
+    ['kill2'] = love.audio.newSource('sounds/kill2.wav', 'static')
 }
 
 gTextures = {
-    ['main'] = love.graphics.newImage('graphics/match3.png'),
-    ['background'] = love.graphics.newImage('graphics/background.png'),
-    ['particle'] = love.graphics.newImage('graphics/particle.png')
+    ['tiles'] = love.graphics.newImage('graphics/tiles.png'),
+    ['toppers'] = love.graphics.newImage('graphics/tile_tops.png'),
+    ['bushes'] = love.graphics.newImage('graphics/bushes_and_cacti.png'),
+    ['jump-blocks'] = love.graphics.newImage('graphics/jump_blocks.png'),
+    ['gems'] = love.graphics.newImage('graphics/gems.png'),
+    ['backgrounds'] = love.graphics.newImage('graphics/backgrounds.png'),
+    ['green-alien'] = love.graphics.newImage('graphics/green_alien.png'),
+    ['creatures'] = love.graphics.newImage('graphics/creatures.png'),
+    ['key'] = love.graphics.newImage('graphics/keys_and_locks.png'),
+    ['flag'] = love.graphics.newImage('graphics/flags.png')
 }
 
 gFrames = {
+    ['tiles'] = GenerateQuads(gTextures['tiles'], TILE_SIZE, TILE_SIZE),
     
-    -- divided into sets for each tile type in this game, instead of one large
-    -- table of Quads
-    ['tiles'] = GenerateTileQuads(gTextures['main'])
+    ['toppers'] = GenerateQuads(gTextures['toppers'], TILE_SIZE, TILE_SIZE),
+    
+    ['bushes'] = GenerateQuads(gTextures['bushes'], 16, 16),
+    ['jump-blocks'] = GenerateQuads(gTextures['jump-blocks'], 16, 16),
+    ['gems'] = GenerateQuads(gTextures['gems'], 16, 16),
+    ['backgrounds'] = GenerateQuads(gTextures['backgrounds'], 256, 128),
+    ['green-alien'] = GenerateQuads(gTextures['green-alien'], 16, 20),
+    ['creatures'] = GenerateQuads(gTextures['creatures'], 16, 16),
+    ['key'] = GenerateQuads(gTextures['key'], 16, 16),
+    ['flag'] = GenerateQuads(gTextures['flag'], 8, 16)
 }
 
--- this time, we're keeping our fonts in a global table for readability
+-- these need to be added after gFrames is initialized because they refer to gFrames from within
+gFrames['tilesets'] = GenerateTileSets(gFrames['tiles'], 
+    TILE_SETS_WIDE, TILE_SETS_TALL, TILE_SET_WIDTH, TILE_SET_HEIGHT)
+
+gFrames['toppersets'] = GenerateTileSets(gFrames['toppers'], 
+    TOPPER_SETS_WIDE, TOPPER_SETS_TALL, TILE_SET_WIDTH, TILE_SET_HEIGHT)
+
 gFonts = {
     ['small'] = love.graphics.newFont('fonts/font.ttf', 8),
     ['medium'] = love.graphics.newFont('fonts/font.ttf', 16),
-    ['large'] = love.graphics.newFont('fonts/font.ttf', 32)
+    ['large'] = love.graphics.newFont('fonts/font.ttf', 32),
+    ['title'] = love.graphics.newFont('fonts/ArcadeAlternate.ttf', 32)
 }

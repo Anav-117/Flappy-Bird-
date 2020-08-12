@@ -1,11 +1,3 @@
---[[
-    GD50
-    Angry Birds
-
-    Author: Colton Ogden
-    cogden@cs50.harvard.edu
-]]
-
 Alien = Class{}
 
 function Alien:init(world, type, x, y, userData)

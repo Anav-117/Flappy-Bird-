@@ -1,9 +1,5 @@
 --[[
-    GD50
     Angry Birds
-
-    Author: Colton Ogden
-    cogden@cs50.harvard.edu
 
     Released by Rovio in 2009, Angry Birds took the mobile gaming scene by storm back
     when it was still arguably in its infancy. Using the simple gameplay mechanic of
